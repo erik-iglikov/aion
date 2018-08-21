@@ -94,7 +94,6 @@ final class TaskImportBlocks implements Runnable {
     public void run() {
         Thread.currentThread().setPriority(Thread.MAX_PRIORITY);
         while (start.get()) {
-
             BlocksWrapper bw;
             try {
                 bw = downloadedBlocks.take();
@@ -109,50 +108,54 @@ final class TaskImportBlocks implements Runnable {
                 batch =
                         bw.getBlocks()
                                 .stream()
-                                .filter(b -> isNotImported(b))
-                                .filter(b -> isNotRestricted(b))
+                                .filter(this::isNotImported)
+                                .filter(this::isNotRestricted)
                                 .collect(Collectors.toList());
             } else {
                 // filter out only imported blocks
                 batch =
                         bw.getBlocks()
                                 .stream()
-                                .filter(b -> isNotImported(b))
+                                .filter(this::isNotImported)
                                 .collect(Collectors.toList());
             }
 
-            PeerState state = peerStates.get(bw.getNodeIdHash());
+            PeerState state = new PeerState(peerStates.get(bw.getNodeIdHash()));
             if (state == null) {
                 log.warn("Peer {} sent blocks that were not requested.", bw.getDisplayId());
                 // ignoring these blocks
                 continue;
             } // the state is not null after this
 
+            long nrmStates =
+                    peerStates.values().stream().filter(s -> s.getMode() == Mode.NORMAL).count();
             // in NORMAL mode and blocks filtered out
-            if (state.getMode() == Mode.NORMAL && batch.isEmpty()) {
-                long allState = peerStates.size();
-                long normalStates =
+            if (state.getMode() == Mode.NORMAL
+                    && (batch.isEmpty() || nrmStates > peerStates.size() / 2)) {
+                long trtStates =
                         peerStates
                                 .values()
                                 .stream()
-                                .filter(s -> s.getMode() == Mode.NORMAL)
+                                .filter(s -> s.getMode() == Mode.TORRENT)
                                 .count();
-                // targeting around 1/3 NORMAL sync nodes
+                // targeting around same number of TORRENT and NORMAL sync nodes
                 // with a minimum of 2 NORMAL nodes
-                if (allState / 3 + 1 < normalStates) {
+                if (trtStates < nrmStates - 1) {
                     log.debug(
                             "<import-mode-before: node = {}, sync mode = {}, base = {}>",
                             bw.getDisplayId(),
                             state.getMode(),
                             state.getBase());
                     state.setMode(Mode.TORRENT);
-                    state.setBase(chain.nextBase(chain.getBestBlock().getNumber()));
+                    state.setBase(chain.nextBase(getBestBlockNumber()));
+                    state.resetRepeated();
                     state.resetLastHeaderRequest();
                     log.debug(
                             "<import-mode-after: node = {}, sync mode = {}, base = {}>",
                             bw.getDisplayId(),
                             state.getMode(),
                             state.getBase());
+                    peerStates.put(bw.getNodeIdHash(), state);
                     continue;
                 }
             }
@@ -172,6 +175,7 @@ final class TaskImportBlocks implements Runnable {
                         log.error("Shutdown due to lack of disk space.");
                         System.exit(0);
                     }
+                    peerStates.put(bw.getNodeIdHash(), state);
                     continue;
                 }
 
@@ -183,26 +187,29 @@ final class TaskImportBlocks implements Runnable {
                     // since last import worked skipping the batch
                     batch.clear();
                     if (log.isDebugEnabled()) {
-                        log.debug("Forward skip.");
+                        log.debug("FORWARD skip for node {}.", bw.getDisplayId());
                     }
-                    break;
+                    peerStates.put(bw.getNodeIdHash(), state);
+                    continue;
                 }
             }
 
             // check for late TORRENT or NORMAL nodes
             if ((state.getMode() == Mode.TORRENT || state.getMode() == Mode.NORMAL)
                     && !batch.isEmpty()
-                    && batch.get(0).getNumber() < chain.getBestBlock().getNumber()) {
+                    && batch.get(batch.size() - 1).getNumber() < getBestBlockNumber()) {
 
                 state.setMode(Mode.TORRENT);
-                state.setBase(chain.nextBase(chain.getBestBlock().getNumber()));
+                state.setBase(chain.nextBase(getBestBlockNumber()));
+                state.resetRepeated();
                 state.resetLastHeaderRequest();
 
                 batch.clear();
                 if (log.isDebugEnabled()) {
                     log.debug("TORRENT skip for node {}.", bw.getDisplayId());
                 }
-                break;
+                peerStates.put(bw.getNodeIdHash(), state);
+                continue;
             }
 
             // remembering imported range
@@ -256,7 +263,9 @@ final class TaskImportBlocks implements Runnable {
                                 // update base
                                 state.setBase(b.getNumber());
                             } else {
-                                if (mode != Mode.TORRENT) {
+                                if (mode != Mode.TORRENT
+                                        && state.getRepeated() > 0
+                                        && state.getBase() <= getBestBlockNumber()) {
                                     // switch to backward mode
                                     state.setMode(Mode.BACKWARD);
                                     state.setBase(b.getNumber());
@@ -264,6 +273,7 @@ final class TaskImportBlocks implements Runnable {
                             }
                             break;
                     }
+                    peerStates.put(bw.getNodeIdHash(), state);
                 }
 
                 // if any block results in NO_PARENT, all subsequent blocks will too
@@ -281,7 +291,7 @@ final class TaskImportBlocks implements Runnable {
                     // check for repeated work
                     if (state.getMode() == Mode.TORRENT) {
                         if (stored < batch.size()) {
-                            long currentBest = chain.getBestBlock().getNumber();
+                            long currentBest = getBestBlockNumber();
                             long nextBase = chain.nextBase(currentBest);
 
                             if (nextBase == currentBest) {
@@ -308,7 +318,7 @@ final class TaskImportBlocks implements Runnable {
                         }
                         state.resetLastHeaderRequest();
                     }
-
+                    peerStates.put(bw.getNodeIdHash(), state);
                     break;
                 }
             }
@@ -319,19 +329,27 @@ final class TaskImportBlocks implements Runnable {
                 state.incRepeated();
             }
 
+            if (state.getMode() == Mode.FORWARD && importResult == ImportResult.IMPORTED_BEST) {
+                // behaving like normal so switch back
+                state.setMode(Mode.NORMAL);
+            }
+
             // check for stored blocks
             if (first < last) {
                 int imported = importFromStorage(state, first, last);
                 if (imported > 0) {
-                    long best = chain.getBestBlock().getNumber();
+                    long best = getBestBlockNumber();
                     state.setBase(state.getMode() == Mode.TORRENT ? chain.nextBase(best) : best);
+                    state.resetRepeated();
                 }
             }
 
             state.resetLastHeaderRequest(); // so we can continue immediately
+            peerStates.put(bw.getNodeIdHash(), state);
 
-            this.statis.update(this.chain.getBestBlock().getNumber());
+            this.statis.update(getBestBlockNumber());
         }
+        log.info(Thread.currentThread().getName() + " RIP.");
     }
 
     private ImportResult importBlock(AionBlock b, String displayId, PeerState state) {
@@ -372,7 +390,7 @@ final class TaskImportBlocks implements Runnable {
         // otherwise it would have found an IMPORTED block already
         if (state.getRepeated() >= state.getMaxRepeats()) {
             state.setMode(Mode.NORMAL);
-            state.setBase(chain.getBestBlock().getNumber());
+            state.setBase(getBestBlockNumber());
             state.resetLastHeaderRequest();
         }
     }
@@ -418,7 +436,7 @@ final class TaskImportBlocks implements Runnable {
                 batchFromDisk =
                         batchFromDisk
                                 .stream()
-                                .filter(b -> isNotImported(b))
+                                .filter(this::isNotImported)
                                 .collect(Collectors.toList());
 
                 if (batchFromDisk.size() > 0) {
@@ -480,8 +498,13 @@ final class TaskImportBlocks implements Runnable {
         // switch to NORMAL if in FORWARD mode
         if (importResult.isBest() && state.getMode() == Mode.FORWARD) {
             state.setMode(Mode.NORMAL);
+            state.setBase(getBestBlockNumber());
         }
 
         return imported;
+    }
+
+    private long getBestBlockNumber() {
+        return chain.getBestBlock() == null ? 0 : chain.getBestBlock().getNumber();
     }
 }

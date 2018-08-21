@@ -1,5 +1,7 @@
 package org.aion.zero.impl.sync;
 
+import org.aion.net.Peer;
+
 public class PeerState {
 
     public enum Mode {
@@ -55,6 +57,27 @@ public class PeerState {
         this.base = base;
 
         this.state = State.INITIAL;
+    }
+
+    /**
+     * Copy constructor returns a peers state identical to the given parameter.
+     */
+    public PeerState(PeerState _state) {
+        this.mode = _state.mode;
+        this.base = _state.base;
+        this.repeated = _state.repeated;
+        this.maxRepeats = _state.maxRepeats;
+        this.state = _state.state;
+        this.lastHeaderRequest = _state.lastHeaderRequest;
+    }
+
+    public void copy(PeerState _state) {
+        this.mode = _state.mode;
+        this.base = _state.base;
+        this.repeated = _state.repeated;
+        this.maxRepeats = _state.maxRepeats;
+        this.state = _state.state;
+        this.lastHeaderRequest = _state.lastHeaderRequest;
     }
 
     public Mode getMode() {
@@ -121,4 +144,6 @@ public class PeerState {
     public void setMaxRepeats(int maxRepeats) {
         this.maxRepeats = maxRepeats;
     }
+
+
 }
