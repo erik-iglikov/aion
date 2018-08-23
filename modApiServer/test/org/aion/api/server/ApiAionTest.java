@@ -124,7 +124,7 @@ public class ApiAionTest {
     }
 
     private static final String KEYSTORE_PATH;
-    private String addressString;
+    private static final String DATABASE_PATH;
 
     static {
         String storageDir = System.getProperty("local.storage.dir");
@@ -132,6 +132,7 @@ public class ApiAionTest {
             storageDir = System.getProperty("user.dir");
         }
         KEYSTORE_PATH = storageDir + "/keystore";
+        DATABASE_PATH = storageDir + "/database";
     }
 
     private ApiAionImpl api;
@@ -143,38 +144,23 @@ public class ApiAionTest {
         api = new ApiAionImpl(impl);
     }
 
-    @After
-    public void tearDown() {
-        // get a list of all the files in keystore directory
-        File folder = new File(KEYSTORE_PATH);
+    private void deleteFolder(File folder) {
         File[] AllFilesInDirectory = folder.listFiles();
-        List<String> allFileNames = new ArrayList<>();
-        List<String> filesToBeDeleted = new ArrayList<>();
 
         // check for invalid or wrong path - should not happen
         if (AllFilesInDirectory == null)
             return;
 
         for (File file : AllFilesInDirectory) {
-            allFileNames.add(file.getName());
+            file.delete();
         }
+        folder.delete();
+    }
 
-        // get a list of the files needed to be deleted, check the ending of file names
-        // with corresponding addresses
-        for (String name : allFileNames) {
-            String ending = name.substring(name.length() - 64);
-
-            if (ending.equals(addressString)) {
-                filesToBeDeleted.add(KEYSTORE_PATH + "/" + name);
-            }
-        }
-
-        // iterate and delete those files
-        for (String name : filesToBeDeleted) {
-            File file = new File(name);
-            if (file.delete())
-                System.out.println("Deleted file: " + name);
-        }
+    @After
+    public void tearDown() {
+        deleteFolder(new File(KEYSTORE_PATH));
+        deleteFolder(new File(DATABASE_PATH));
     }
 
     @Test
@@ -290,7 +276,6 @@ public class ApiAionTest {
         byte[] msg = "test message".getBytes();
 
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString = addr.toString();
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
         AionTransaction tx = new AionTransaction(repo.getNonce(Address.ZERO_ADDRESS()).toByteArray(),
@@ -311,7 +296,6 @@ public class ApiAionTest {
         byte[] msg = "test message".getBytes();
 
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString = addr.toString();
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -334,7 +318,6 @@ public class ApiAionTest {
         byte[] msg = "test message".getBytes();
 
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString = addr.toString();
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -369,7 +352,6 @@ public class ApiAionTest {
         byte[] msg = "test message".getBytes();
 
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString = addr.toString();
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 

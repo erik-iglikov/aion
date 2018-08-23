@@ -46,10 +46,8 @@ import org.junit.Test;
 import java.io.File;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -65,9 +63,7 @@ public class ApiAion0Test {
     private static final int RSP_HEADER_LEN = RSP_HEADER_NOHASH_LEN + MSG_HASH_LEN;
 
     private static final String KEYSTORE_PATH;
-    private String addressString1;
-    private String addressString2;
-    private boolean keyCreated;
+    private static final String DATABASE_PATH;
 
     static {
         String storageDir = System.getProperty("local.storage.dir");
@@ -75,7 +71,9 @@ public class ApiAion0Test {
             storageDir = System.getProperty("user.dir");
         }
         KEYSTORE_PATH = storageDir + "/keystore";
+        DATABASE_PATH = storageDir + "/database";
     }
+
     public ApiAion0Test() {
         msg = "test message".getBytes();
         socketId = RandomUtils.nextBytes(5);
@@ -122,7 +120,19 @@ public class ApiAion0Test {
     @Before
     public void setup() {
         api = new ApiAion0(AionImpl.inst());
-        keyCreated = false;
+    }
+
+    private void deleteFolder(File folder) {
+        File[] AllFilesInDirectory = folder.listFiles();
+
+        // check for invalid or wrong path - should not happen
+        if (AllFilesInDirectory == null)
+            return;
+
+        for (File file : AllFilesInDirectory) {
+            file.delete();
+        }
+        folder.delete();
     }
 
     @After
@@ -130,38 +140,8 @@ public class ApiAion0Test {
         api.shutDown();
         rsp = null;
 
-        if(keyCreated) {
-            // get a list of all the files in keystore directory
-            File folder = new File(KEYSTORE_PATH);
-            File[] AllFilesInDirectory = folder.listFiles();
-            List<String> allFileNames = new ArrayList<>();
-            List<String> filesToBeDeleted = new ArrayList<>();
-
-            // check for invalid or wrong path - should not happen
-            if (AllFilesInDirectory == null)
-                return;
-
-            for (File file : AllFilesInDirectory) {
-                allFileNames.add(file.getName());
-            }
-
-            // get a list of the files needed to be deleted, check the ending of file names
-            // with corresponding addresses
-            for (String name : allFileNames) {
-                String ending = name.substring(name.length() - 64);
-
-                if (ending.equals(addressString1) || ending.equals(addressString2)) {
-                    filesToBeDeleted.add(KEYSTORE_PATH + "/" + name);
-                }
-            }
-
-            // iterate and delete those files
-            for (String name : filesToBeDeleted) {
-                File file = new File(name);
-                if (file.delete())
-                    System.out.println("Deleted file: " + name);
-            }
-        }
+        deleteFolder(new File(KEYSTORE_PATH));
+        deleteFolder(new File(DATABASE_PATH));
     }
 
     @Test
@@ -210,8 +190,6 @@ public class ApiAion0Test {
     @Test
     public void testProcessContractDeploy() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -240,6 +218,10 @@ public class ApiAion0Test {
 
     @Test
     public void testProcessAccountsValue() throws Exception {
+        Address addr = new Address(Keystore.create("testPwd"));
+
+        AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
+
         rsp = sendRequest(Message.Servs.s_wallet_VALUE, Message.Funcs.f_accounts_VALUE);
 
         assertEquals(Message.Retcode.r_success_VALUE, rsp[1]);
@@ -294,8 +276,6 @@ public class ApiAion0Test {
     @Test
     public void testProcessGetBalance() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -319,8 +299,6 @@ public class ApiAion0Test {
     @Test
     public void testProcessGetNonce() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -404,8 +382,6 @@ public class ApiAion0Test {
     @Test
     public void testProcessSendTransaction() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -434,8 +410,6 @@ public class ApiAion0Test {
     @Test
     public void testProcessGetCode() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -455,7 +429,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetTR() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -491,8 +466,6 @@ public class ApiAion0Test {
     @Test
     public void testProcessCall() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
 
@@ -553,7 +526,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetTxByBlockHashAndIndex() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -589,7 +563,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetTxByBlockNumberAndIndex() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -625,7 +600,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetBlockTxCountByNumber() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -658,7 +634,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetBlockTxCountByHash() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -691,7 +668,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetTxByHash() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -726,7 +704,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessGetTxCount() throws Exception {
         setup();
 
@@ -943,10 +922,6 @@ public class ApiAion0Test {
         Address addr2 = new Address(Keystore.create("testPwd2"));
         AccountManager.inst().unlockAccount(addr2, "testPwd12", 50000);
 
-        addressString1 = addr1.toString();
-        addressString2 = addr2.toString();
-        keyCreated = true;
-
         Message.t_Key tkey1 = Message.t_Key.newBuilder()
                 .setAddress(ByteString.copyFrom(addr1.toBytes()))
                 .setPassword("testPwd1")
@@ -1003,7 +978,8 @@ public class ApiAion0Test {
         assertEquals(Message.Retcode.r_fail_service_call_VALUE, rsp[1]);
     }
 
-    @Test @Ignore
+    @Test
+    @Ignore
     public void testProcessRawTransactions() throws Exception {
         AionImpl impl = AionImpl.inst();
         AionRepositoryImpl repo = AionRepositoryImpl.inst();
@@ -1043,10 +1019,6 @@ public class ApiAion0Test {
 
         Address addr2 = new Address(Keystore.create("testPwd2"));
         AccountManager.inst().unlockAccount(addr2, "testPwd12", 50000);
-
-        addressString1 = addr1.toString();
-        addressString1 = addr2.toString();
-        keyCreated = true;
 
         Message.t_FilterCt fil1 = Message.t_FilterCt.newBuilder()
                 .addAddresses(ByteString.copyFrom(addr1.toBytes()))
@@ -1211,9 +1183,6 @@ public class ApiAion0Test {
     public void testProcessAccountDetails() throws Exception {
         Address addr = new Address(Keystore.create("testPwd"));
         AccountManager.inst().unlockAccount(addr, "testPwd", 50000);
-
-        addressString1 = addr.toString();
-        keyCreated = true;
 
         Message.req_getAccountDetailsByAddressList reqBody = Message.req_getAccountDetailsByAddressList.newBuilder()
                 .addAddresses(ByteString.copyFrom(addr.toBytes()))

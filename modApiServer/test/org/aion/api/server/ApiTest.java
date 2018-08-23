@@ -28,6 +28,7 @@ import org.aion.base.type.Address;
 import org.aion.mcf.account.AccountManager;
 import org.aion.mcf.account.Keystore;
 import org.aion.mcf.types.AbstractBlock;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -87,6 +88,7 @@ public class ApiTest {
     }
 
     private static final String KEYSTORE_PATH;
+    private static final String DATABASE_PATH;
     private String addr;
 
 
@@ -96,39 +98,26 @@ public class ApiTest {
             storageDir = System.getProperty("user.dir");
         }
         KEYSTORE_PATH = storageDir + "/keystore";
+        DATABASE_PATH = storageDir + "/database";
     }
 
-    private void tearDown() {
-        // get a list of all the files in keystore directory
-        File folder = new File(KEYSTORE_PATH);
+    private void deleteFolder(File folder) {
         File[] AllFilesInDirectory = folder.listFiles();
-        List<String> allFileNames = new ArrayList<>();
-        List<String> filesToBeDeleted = new ArrayList<>();
 
         // check for invalid or wrong path - should not happen
-        if(AllFilesInDirectory == null)
+        if (AllFilesInDirectory == null)
             return;
 
-        for(File file: AllFilesInDirectory){
-            allFileNames.add(file.getName());
+        for (File file : AllFilesInDirectory) {
+            file.delete();
         }
+        folder.delete();
+    }
 
-        // get a list of the files needed to be deleted, check the ending of file names
-        // with corresponding addresses
-        for(String name: allFileNames){
-            String ending = name.substring(name.length()-64);
-
-            if(ending.equals(addr)) {
-                filesToBeDeleted.add(KEYSTORE_PATH + "/"+ name);
-            }
-        }
-
-        // iterate and delete those files
-        for (String name: filesToBeDeleted){
-            File file = new File(name);
-            if (file.delete())
-                System.out.println("Deleted file: " + name);
-        }
+    @After
+    public void tearDown() {
+        deleteFolder(new File(KEYSTORE_PATH));
+        deleteFolder(new File(DATABASE_PATH));
     }
 
     @Test
